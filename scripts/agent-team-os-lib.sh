@@ -5,7 +5,11 @@
 #
 # Functions: ab_detect_agent, ab_iso_now, ab_msg_id, ab_lock, ab_unlock,
 #            ab_write_message, ab_list_inbox, ab_count_inbox, ab_resolve_msg_path,
-#            ab_mark_read, ab_log_outbox, ab_thread_append, ab_update_registry
+#            ab_mark_read, ab_log_outbox, ab_thread_append, ab_update_registry,
+#            ab_msg_project_path, ab_msg_workspace_match, ab_count_inbox_here,
+#            ab_count_inbox_elsewhere,
+#            ab_cursor_path, ab_cursor_get_last, ab_cursor_update,
+#            ab_drain_fresh_count, ab_drain_fresh_list, ab_drain_for_stop
 
 AB_HOME="${AB_HOME:-$HOME/.agent-team-os}"
 AB_MAP="$AB_HOME/AGENT_MAP.json"
@@ -351,4 +355,206 @@ ab_msg_summary() {
     (if .payload.summary then "  | " + (.payload.summary | .[0:60]) else "" end) +
     (if .response_by then "  (by " + .response_by + ")" else "" end)
   ' "$msg_path" 2>/dev/null
+}
+
+# ---------- Workspace filtering (v1.2) ----------
+
+ab_msg_project_path() {
+  # Extract context.project_path from a message file. Echoes empty if absent.
+  local msg_path="$1"
+  [[ -f "$msg_path" ]] || return 0
+  local p
+  p=$(jq -r '.context.project_path // ""' "$msg_path" 2>/dev/null)
+  [[ "$p" == "null" ]] && p=""
+  echo "$p"
+}
+
+ab_msg_workspace_match() {
+  # Decide if a message is "in scope" for the current workspace.
+  # Echoes one of: "here" | "elsewhere" | "global"
+  local msg_path="$1"
+  local cwd="${2:-$PWD}"
+  local mp
+  mp=$(ab_msg_project_path "$msg_path")
+  if [[ -z "$mp" ]]; then
+    echo "global"
+    return 0
+  fi
+  cwd="${cwd%/}"
+  mp="${mp%/}"
+  if [[ "$cwd" == "$mp" ]]; then
+    echo "here"
+    return 0
+  fi
+  if [[ "$cwd" == "$mp"/* ]]; then
+    echo "here"
+    return 0
+  fi
+  if [[ "$mp" == "$cwd"/* ]]; then
+    echo "here"
+    return 0
+  fi
+  echo "elsewhere"
+}
+
+ab_count_inbox_here() {
+  # Count inbox messages that match current workspace (here + global).
+  local agent="$1"
+  local cwd="${2:-$PWD}"
+  local count=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local m
+    m=$(ab_msg_workspace_match "$f" "$cwd")
+    if [[ "$m" == "here" || "$m" == "global" ]]; then
+      count=$((count+1))
+    fi
+  done < <(ab_list_inbox "$agent")
+  echo "$count"
+}
+
+ab_count_inbox_elsewhere() {
+  # Count inbox messages NOT in current workspace scope.
+  local agent="$1"
+  local cwd="${2:-$PWD}"
+  local count=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local m
+    m=$(ab_msg_workspace_match "$f" "$cwd")
+    if [[ "$m" == "elsewhere" ]]; then
+      count=$((count+1))
+    fi
+  done < <(ab_list_inbox "$agent")
+  echo "$count"
+}
+
+# ---------- Drain-on-Stop (v2.0 §4) ----------
+
+ab_cursor_path() {
+  # Return path to cursor.json for given agent.
+  local agent="$1"
+  echo "$AB_HOME/agents/${agent}/cursor.json"
+}
+
+ab_cursor_get_last() {
+  # Return lastProcessed msg-id from cursor.json (empty string if cursor absent).
+  local agent="$1"
+  local f
+  f=$(ab_cursor_path "$agent")
+  [[ -f "$f" ]] || { echo ""; return 0; }
+  jq -r '.lastProcessed // ""' "$f" 2>/dev/null
+}
+
+ab_cursor_update() {
+  # Write cursor: lastProcessed + drainBlockCount.
+  # Args: agent, lastProcessed, drainBlockCount
+  local agent="$1"
+  local last="$2"
+  local count="${3:-0}"
+  local f
+  f=$(ab_cursor_path "$agent")
+  mkdir -p "$(dirname "$f")"
+  printf '{"lastProcessed":"%s","drainBlockCount":%d}\n' "$last" "$count" > "$f"
+}
+
+ab_drain_fresh_count() {
+  # Count inbox messages with id > lastProcessed (string sort; ISO timestamp IDs are sortable).
+  # Args: agent, lastProcessed (empty string = all messages are fresh)
+  local agent="$1"
+  local last="${2:-}"
+  local count=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local mid
+    mid=$(basename "$f" .json)
+    if [[ -z "$last" || "$mid" > "$last" ]]; then
+      count=$((count+1))
+    fi
+  done < <(ab_list_inbox "$agent")
+  echo "$count"
+}
+
+ab_drain_fresh_list() {
+  # Return up to 5 fresh message summaries (id | from | intent) for block reason.
+  # Args: agent, lastProcessed
+  local agent="$1"
+  local last="${2:-}"
+  local n=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local mid
+    mid=$(basename "$f" .json)
+    if [[ -z "$last" || "$mid" > "$last" ]]; then
+      local from intent
+      from=$(jq -r '.from // "?"' "$f" 2>/dev/null)
+      intent=$(jq -r '.intent // .type // "?"' "$f" 2>/dev/null)
+      echo "  ${mid}  from=${from}  intent=${intent}"
+      n=$((n+1))
+      [[ "$n" -ge 5 ]] && break
+    fi
+  done < <(ab_list_inbox "$agent" | sort)
+}
+
+ab_drain_for_stop() {
+  # Main drain logic for Stop hook.
+  # Exits 0 (allow stop) or prints block JSON to stdout and exits 1 (block stop).
+  # Args: agent, blockCap (default 3)
+  local agent="$1"
+  local cap="${2:-3}"
+
+  # Read cursor
+  local cursor_file
+  cursor_file=$(ab_cursor_path "$agent")
+  local last=""
+  local block_count=0
+  if [[ -f "$cursor_file" ]]; then
+    last=$(jq -r '.lastProcessed // ""' "$cursor_file" 2>/dev/null)
+    block_count=$(jq -r '.drainBlockCount // 0' "$cursor_file" 2>/dev/null)
+    [[ "$last" == "null" ]] && last=""
+    [[ "$block_count" == "null" || -z "$block_count" ]] && block_count=0
+  fi
+
+  # Loop guard: if we've already blocked cap times, reset and allow stop
+  if [[ "$block_count" -ge "$cap" ]]; then
+    ab_cursor_update "$agent" "$last" 0
+    exit 0
+  fi
+
+  # Find fresh messages
+  local fresh_count
+  fresh_count=$(ab_drain_fresh_count "$agent" "$last")
+
+  if [[ "$fresh_count" -eq 0 ]]; then
+    exit 0
+  fi
+
+  # Compute new lastProcessed = max id among fresh messages
+  local new_last=""
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local mid
+    mid=$(basename "$f" .json)
+    if [[ -z "$last" || "$mid" > "$last" ]]; then
+      if [[ -z "$new_last" || "$mid" > "$new_last" ]]; then
+        new_last="$mid"
+      fi
+    fi
+  done < <(ab_list_inbox "$agent")
+
+  block_count=$((block_count + 1))
+  ab_cursor_update "$agent" "${new_last:-$last}" "$block_count"
+
+  # Build block reason
+  local msg_lines
+  msg_lines=$(ab_drain_fresh_list "$agent" "$last")
+  local reason
+  reason="${fresh_count} unread message(s) in inbox (block ${block_count}/${cap}):
+${msg_lines}"
+
+  # Output Claude Code Stop hook decision JSON
+  printf '{"decision":"block","reason":"%s"}\n' \
+    "$(echo "$reason" | sed 's/"/\\"/g; s/$/\\n/g' | tr -d '\n' | sed 's/\\n$//')"
+
+  return 1
 }
