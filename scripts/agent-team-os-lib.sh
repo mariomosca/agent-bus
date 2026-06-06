@@ -558,3 +558,10 @@ ${msg_lines}"
 
   return 1
 }
+
+# --- v2.0: load TaskProvider module if present (same dir as this lib) ---
+_ATO_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$_ATO_LIB_DIR/agent-team-os-taskprovider.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$_ATO_LIB_DIR/agent-team-os-taskprovider.sh"
+fi
