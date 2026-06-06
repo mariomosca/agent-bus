@@ -46,10 +46,18 @@ echo "Copying helper library → $CLAUDE_HOME/scripts/agent-team-os-lib.sh"
 cp "$REPO_DIR/scripts/agent-team-os-lib.sh" "$CLAUDE_HOME/scripts/agent-team-os-lib.sh"
 chmod +x "$CLAUDE_HOME/scripts/agent-team-os-lib.sh"
 
+echo "Copying v2.0 modules → $CLAUDE_HOME/scripts/"
+cp "$REPO_DIR/scripts/agent-team-os-taskprovider.sh" "$CLAUDE_HOME/scripts/agent-team-os-taskprovider.sh"
+cp "$REPO_DIR/scripts/agent-team-os-harvest.sh"      "$CLAUDE_HOME/scripts/agent-team-os-harvest.sh"
+chmod +x "$CLAUDE_HOME/scripts/agent-team-os-taskprovider.sh" "$CLAUDE_HOME/scripts/agent-team-os-harvest.sh"
+
 echo "Copying hooks → $CLAUDE_HOME/hooks/"
 cp "$REPO_DIR/hooks/agent-team-os-load.sh"   "$CLAUDE_HOME/hooks/agent-team-os-load.sh"
 cp "$REPO_DIR/hooks/agent-team-os-urgent.sh" "$CLAUDE_HOME/hooks/agent-team-os-urgent.sh"
-chmod +x "$CLAUDE_HOME/hooks/agent-team-os-load.sh" "$CLAUDE_HOME/hooks/agent-team-os-urgent.sh"
+cp "$REPO_DIR/hooks/agent-team-os-stop.sh"   "$CLAUDE_HOME/hooks/agent-team-os-stop.sh"
+chmod +x "$CLAUDE_HOME/hooks/agent-team-os-load.sh" "$CLAUDE_HOME/hooks/agent-team-os-urgent.sh" "$CLAUDE_HOME/hooks/agent-team-os-stop.sh"
+# NOTE: the Stop hook is COPIED but NOT auto-registered in settings.json.
+# Activate manually (gated) via skill update-config — see docs/agentic-v2/SETTINGS-DIFF.md
 
 echo "Copying slash commands → $CLAUDE_HOME/commands/"
 for cmd in bus inbox read send reply handoff thread; do

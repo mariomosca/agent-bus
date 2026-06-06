@@ -1,6 +1,6 @@
 {
-  "version": "1.2",
-  "updated": "2026-05-20",
+  "version": "2.0",
+  "updated": "2026-06-06",
   "rules": [
     {
       "pattern": "/Users/me/work",
@@ -19,6 +19,9 @@
     }
   ],
   "fallback": "ops",
+  "gods": [
+    "ops"
+  ],
   "agents": {
     "ops": {
       "display_name": "Ops",
@@ -30,7 +33,10 @@
         "question",
         "architecture-review"
       ],
-      "persona_file": "personas/ops.md"
+      "persona_file": "personas/ops.md",
+      "is_god": true,
+      "domain": "side",
+      "task_provider": "orbit"
     },
     "dev": {
       "display_name": "Dev",
@@ -44,7 +50,9 @@
         "question",
         "generate-screenshots"
       ],
-      "persona_file": "personas/dev.md"
+      "persona_file": "personas/dev.md",
+      "god": "ops",
+      "domain": "side"
     },
     "growth": {
       "display_name": "Growth",
@@ -56,7 +64,9 @@
         "handoff",
         "question"
       ],
-      "persona_file": "personas/growth.md"
+      "persona_file": "personas/growth.md",
+      "god": "ops",
+      "domain": "side"
     }
   },
   "routing_rules": {
@@ -72,5 +82,6 @@
       "deny": [],
       "reason": "growth can talk to ops and dev"
     }
-  }
+  },
+  "_v2_note": "v2.0 adds: gods[] (list of orchestrator agents), per-agent domain + god + optional task_provider. GOD agents drive a TaskProvider (orbit/pmohub) per domain. See PLAN-AGENT-TEAM-OS.md v2.0."
 }
