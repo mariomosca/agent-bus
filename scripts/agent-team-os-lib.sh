@@ -500,56 +500,52 @@ ab_drain_for_stop() {
   # Main drain logic for Stop hook.
   # Exits 0 (allow stop) or prints block JSON to stdout and exits 1 (block stop).
   # Args: agent, blockCap (default 3)
+  #
+  # "Unhandled" = messages physically present in inbox/ (NOT yet moved to .done/
+  # by the agent). We block until the inbox is actually drained, so the cursor
+  # does NOT advance on a mere block — the agent must move handled messages to
+  # .done/. drainBlockCount is the loop guard: if the agent keeps stopping
+  # without handling the inbox, after `cap` consecutive blocks we relent and
+  # allow stop, to avoid trapping it forever.
   local agent="$1"
   local cap="${2:-3}"
 
-  # Read cursor
-  local cursor_file
+  # Count messages still in inbox (ab_list_inbox excludes .done/)
+  local pending
+  pending=$(ab_list_inbox "$agent" | grep -c . 2>/dev/null)
+  [[ -z "$pending" ]] && pending=0
+
+  # Inbox empty → nothing to drain. Reset loop guard and allow stop.
+  if [[ "$pending" -eq 0 ]]; then
+    local cursor_file
+    cursor_file=$(ab_cursor_path "$agent")
+    [[ -f "$cursor_file" ]] && ab_cursor_update "$agent" "" 0
+    exit 0
+  fi
+
+  # Read loop-guard counter
+  local cursor_file block_count
   cursor_file=$(ab_cursor_path "$agent")
-  local last=""
-  local block_count=0
+  block_count=0
   if [[ -f "$cursor_file" ]]; then
-    last=$(jq -r '.lastProcessed // ""' "$cursor_file" 2>/dev/null)
     block_count=$(jq -r '.drainBlockCount // 0' "$cursor_file" 2>/dev/null)
-    [[ "$last" == "null" ]] && last=""
     [[ "$block_count" == "null" || -z "$block_count" ]] && block_count=0
   fi
 
-  # Loop guard: if we've already blocked cap times, reset and allow stop
+  # Loop guard: blocked cap times already and inbox still not drained → relent.
   if [[ "$block_count" -ge "$cap" ]]; then
-    ab_cursor_update "$agent" "$last" 0
+    ab_cursor_update "$agent" "" 0
     exit 0
   fi
-
-  # Find fresh messages
-  local fresh_count
-  fresh_count=$(ab_drain_fresh_count "$agent" "$last")
-
-  if [[ "$fresh_count" -eq 0 ]]; then
-    exit 0
-  fi
-
-  # Compute new lastProcessed = max id among fresh messages
-  local new_last=""
-  while IFS= read -r f; do
-    [[ -z "$f" ]] && continue
-    local mid
-    mid=$(basename "$f" .json)
-    if [[ -z "$last" || "$mid" > "$last" ]]; then
-      if [[ -z "$new_last" || "$mid" > "$new_last" ]]; then
-        new_last="$mid"
-      fi
-    fi
-  done < <(ab_list_inbox "$agent")
 
   block_count=$((block_count + 1))
-  ab_cursor_update "$agent" "${new_last:-$last}" "$block_count"
+  ab_cursor_update "$agent" "" "$block_count"
 
-  # Build block reason
+  # Build block reason from pending messages (up to 5)
   local msg_lines
-  msg_lines=$(ab_drain_fresh_list "$agent" "$last")
+  msg_lines=$(ab_drain_fresh_list "$agent" "")
   local reason
-  reason="${fresh_count} unread message(s) in inbox (block ${block_count}/${cap}):
+  reason="${pending} unread message(s) in inbox (block ${block_count}/${cap}). Open the files in inbox/, act on each, then move handled ones to inbox/.done/ before stopping:
 ${msg_lines}"
 
   # Output Claude Code Stop hook decision JSON
