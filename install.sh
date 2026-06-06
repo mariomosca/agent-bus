@@ -60,13 +60,15 @@ chmod +x "$CLAUDE_HOME/hooks/agent-team-os-load.sh" "$CLAUDE_HOME/hooks/agent-te
 # Activate manually (gated) via skill update-config — see docs/agentic-v2/SETTINGS-DIFF.md
 
 echo "Copying slash commands → $CLAUDE_HOME/commands/"
-for cmd in bus inbox read send reply handoff thread; do
+for cmd in bus inbox read send reply handoff thread god; do
   cp "$REPO_DIR/commands/${cmd}.md" "$CLAUDE_HOME/commands/${cmd}.md"
 done
 
 echo "Copying skill → $CLAUDE_HOME/skills/agent-team-os/"
 mkdir -p "$CLAUDE_HOME/skills/agent-team-os"
 cp "$REPO_DIR/skills/agent-team-os/SKILL.md" "$CLAUDE_HOME/skills/agent-team-os/SKILL.md"
+# v2: GOD contract shipped alongside the skill (used by /god on)
+cp "$REPO_DIR/skills/agent-team-os/GOD-CONTRACT.md" "$CLAUDE_HOME/skills/agent-team-os/GOD-CONTRACT.md" 2>/dev/null || true
 
 # --- AGENT_MAP starter ---
 
