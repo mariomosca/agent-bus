@@ -166,6 +166,35 @@ Skill:
   6. "Sent. When you open the dev session, the brief will be in the inbox."
 ```
 
+## GOD Dispatch playbook (Onda) — open & drive work sessions fast
+
+When in GOD mode and dispatching agents inside Onda (see GOD-CONTRACT.md §Dispatch & Monitor), follow these guidelines — learned from real runs — to spawn fast and cheap:
+
+**Before spawning:**
+- Write the brief to the agent's inbox FIRST. The agent reads it via `/inbox` at boot and starts immediately — no long manual prompt needed.
+- Keep the launch prompt minimal: `"You are <agent>. Run /inbox, /read <msg-id>, do the task, print ===DONE=== then /reply."`
+
+**Spawning (per agent):**
+- **Reuse the workspace's default pane.** Creating a workspace already spawns one terminal. Call `onda_workspace_layout` → use `activePaneId`. Do NOT `add_terminal` unless you need an extra pane — otherwise you get an empty stray pane.
+- Spawn with `claude --dangerously-skip-permissions` for trusted repos/sandboxes → no Bash permission prompts mid-task (the #1 thing that stalls an agent).
+- Handle the trust-folder prompt automatically: `wait_for("trust|Welcome")` → if trust, `send_keys(["Enter"])`.
+- **Path gotcha (macOS):** `/tmp` resolves to `/private/tmp`; symlinked paths break `ab_detect_agent` (agent shows as `[Anon]`). Spawn on real, mapped paths (`~/Projects/...`); the detect normalizes symlinks (realpath) so canonical paths match.
+- Submit the prompt: `terminal_run(prompt)` then ALWAYS `send_keys(["Enter"])` — `terminal_run` alone does NOT submit in the Claude TUI.
+
+**Layout by agent count:**
+- 1 agent → the workspace's default pane.
+- 2 → `add_terminal direction:right` (side-by-side).
+- 3–4 → `workspace_tile` quad (2×2 grid, all visible).
+- >4 → separate tabs (avoid infinite rightward growth).
+
+**Monitoring — cheap, not live:**
+- NEVER `subscribe`+`poll` a Claude TUI continuously (100+ chunks/sec of spinner = token burn).
+- Use `wait_for(/===DONE===/)` (blocks, costs nothing until match) + the agent's `/reply` on the bus (passive, lands in your inbox).
+- `terminal_read`/`screenshot` only at intervals or on demand for visual checks.
+- On completion: collect `/reply`, sign off, optionally `agent-team-os-harvest.sh <cwd>` for token+cost. Unmount workspaces you created (not Mario's existing ones).
+
+**Fallback (no Onda):** if `mcp__onda__*` tools are absent, queue briefs and hand Mario `cd <ws> && claude` commands. Don't pretend to spawn.
+
 ## Where things live
 
 - Authoritative spec: `~/agent-team-os/README.md` and `~/agent-team-os/scripts/agent-team-os-lib.sh`

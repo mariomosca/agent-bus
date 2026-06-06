@@ -56,8 +56,13 @@ ab_detect_agent() {
     echo "WARN: jq not found. Install jq to enable agent detection." >&2
     return 0
   fi
-  jq -r --arg cwd "$cwd" '
-    .rules[] | select(.pattern as $p | $cwd | startswith($p)) | .agent
+  # Normalize symlinks (e.g. macOS /tmp -> /private/tmp) so prefix rules match
+  # the canonical path Onda/Claude report. Fall back to raw cwd if realpath fails.
+  local rcwd
+  rcwd=$(realpath "$cwd" 2>/dev/null || echo "$cwd")
+  # Match against both raw and resolved path (rule may be written either way).
+  jq -r --arg cwd "$cwd" --arg rcwd "$rcwd" '
+    .rules[] | select(.pattern as $p | ($cwd | startswith($p)) or ($rcwd | startswith($p))) | .agent
   ' "$AB_MAP" 2>/dev/null | head -1
 }
 
