@@ -321,6 +321,7 @@ flowchart TB
 cd ~/agent-team-os
 ./install.sh</code></pre>
     </div>
+    <p class="text-sm text-muted mt-8"><span class="text-teal font-mono">v2 · optional</span> — the installer also copies a <code class="text-teal font-mono">Stop</code> hook (drain-on-Stop: blocks a session from closing while its inbox has unhandled messages) but does <strong>not</strong> register it, since it affects every session. Enable it explicitly by adding <code class="text-teal font-mono">"Stop"</code> to your settings.json hooks — see <a href="https://github.com/mariomosca/agent-team-os/blob/main/docs/agentic-v2/SETTINGS-DIFF.md" class="text-teal underline">SETTINGS-DIFF.md</a>. Reading this repo as an agent? Start from <a href="https://github.com/mariomosca/agent-team-os/blob/main/AGENTS.md" class="text-teal underline">AGENTS.md</a>.</p>
   </section>
 
   <!-- How it works -->

@@ -164,6 +164,16 @@ The installer:
 
 In both cases, edit `~/.agent-team-os/AGENT_MAP.json` to map your working directories to agent names.
 
+### Optional: drain-on-Stop hook (v2)
+
+The installer also copies a `Stop` hook (`agent-team-os-stop.sh`) but **does not register it** — it's opt-in because it changes behavior across every session. When enabled, it blocks a session from closing while its inbox still has unhandled messages (with a loop guard so you're never trapped). To turn it on, add to `~/.claude/settings.json`:
+
+```json
+{ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/agent-team-os-stop.sh" }] }] } }
+```
+
+Test it isolated first — see [`docs/agentic-v2/SETTINGS-DIFF.md`](./docs/agentic-v2/SETTINGS-DIFF.md). For the full v2 layers (dual-GOD orchestration, TaskProvider, telemetry) see [`AGENTS.md`](./AGENTS.md).
+
 ## Example: define your agents
 
 ```json

@@ -121,4 +121,14 @@ cat <<'JSON'
        }
 JSON
 echo ""
-echo "  3. Open a Claude Code session in a mapped workspace and try /inbox or /bus."
+echo "  3. (Optional, v2) Enable the drain-on-Stop hook — blocks a session from"
+echo "     closing while its inbox has unhandled messages. NOT auto-registered."
+echo "     Add this to the \"hooks\" block above, then test per docs/agentic-v2/SETTINGS-DIFF.md:"
+echo ""
+cat <<'JSON'
+           "Stop": [
+             { "hooks": [ { "type": "command", "command": "~/.claude/hooks/agent-team-os-stop.sh" } ] }
+           ]
+JSON
+echo ""
+echo "  4. Open a Claude Code session in a mapped workspace and try /inbox or /bus."
