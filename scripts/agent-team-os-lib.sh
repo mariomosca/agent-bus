@@ -266,7 +266,97 @@ ab_write_message() {
   ab_log_outbox "$target"
   ab_thread_append "$thread_id" "$msg_id" "$from" "$to" "$type" "$intent"
 
+  # Cross-domain cc-awareness (full-mesh graph mode): drop a non-blocking
+  # notify in the hub inbox so the hub keeps visibility without gatekeeping.
+  ab_maybe_cc_hub "$from" "$to" "$msg_id" "$thread_id" "$type" "$intent" "$priority"
+
   echo "$msg_id"
+}
+
+# ---------- Cross-domain cc-awareness ----------
+
+ab_agent_domain() {
+  # Echo the domain of an agent (falls back to the agent name itself if unset,
+  # so domain-less agents like lifeos are treated as their own isolated domain).
+  local agent="$1"
+  jq -r --arg a "$agent" '.agents[$a].domain // $a' "$AB_MAP" 2>/dev/null
+}
+
+ab_maybe_cc_hub() {
+  # Non-blocking: if cc_awareness is enabled and this message crosses domains
+  # without involving the hub, write a lightweight cc-notify to the hub inbox.
+  local from="$1" to="$2" orig_msg="$3" thread="$4" type="$5" intent="$6" prio="$7"
+
+  local enabled hub
+  enabled=$(jq -r '.cc_awareness.enabled // false' "$AB_MAP" 2>/dev/null)
+  [[ "$enabled" != "true" ]] && return 0
+  hub=$(jq -r '.cc_awareness.hub // "alita"' "$AB_MAP" 2>/dev/null)
+  [[ -z "$hub" || "$hub" == "null" ]] && return 0
+
+  # Skip if the hub is already a party to the message.
+  [[ "$from" == "$hub" || "$to" == "$hub" ]] && return 0
+
+  local dom_from dom_to
+  dom_from=$(ab_agent_domain "$from")
+  dom_to=$(ab_agent_domain "$to")
+  # Only cc on cross-domain traffic.
+  [[ "$dom_from" == "$dom_to" ]] && return 0
+
+  # Build the cc-notify payload (references the original message, no response needed).
+  local cc_id cc_ts cc_target cc_tmp
+  cc_id=$(ab_msg_id)
+  cc_ts=$(ab_iso_now)
+  ab_lock "$hub" || return 0   # best-effort: never fail the original send
+  cc_target="$AB_HOME/inboxes/$hub/${cc_id}.json"
+  cc_tmp="${cc_target}.tmp"
+
+  jq -n \
+    --arg id "$cc_id" \
+    --arg from "$from" \
+    --arg hub "$hub" \
+    --arg thread "$thread" \
+    --arg orig "$orig_msg" \
+    --arg dom_from "$dom_from" \
+    --arg dom_to "$dom_to" \
+    --arg to "$to" \
+    --arg otype "$type" \
+    --arg ointent "$intent" \
+    --arg oprio "$prio" \
+    --arg ts "$cc_ts" \
+    '{
+      id: $id,
+      version: "1.0",
+      from: $from,
+      to: $hub,
+      thread_id: $thread,
+      in_reply_to: null,
+      type: "cc-notify",
+      intent: "cross-domain-awareness",
+      priority: "low",
+      payload: {
+        summary: ("Cross-domain " + $dom_from + "→" + $dom_to + ": " + $from + "→" + $to + " (" + $otype + "/" + $ointent + ", prio " + $oprio + ")"),
+        original_msg_id: $orig,
+        original_from: $from,
+        original_to: $to,
+        original_type: $otype,
+        original_intent: $ointent,
+        original_priority: $oprio,
+        note: "Auto-cc for hub awareness (full-mesh mode). Not actionable; original parties handle it."
+      },
+      context_refs: [],
+      requires_response: false,
+      response_by: null,
+      ts: $ts
+    }' > "$cc_tmp" 2>/dev/null
+
+  if jq empty "$cc_tmp" 2>/dev/null; then
+    mv "$cc_tmp" "$cc_target"
+    ab_log_outbox "$cc_target"
+  else
+    rm -f "$cc_tmp"
+  fi
+  ab_unlock "$hub"
+  return 0
 }
 
 # ---------- Outbox audit ----------

@@ -24,11 +24,14 @@ jq -r '
     (if .value.capabilities then "  caps: " + (.value.capabilities | join(", ")) else "" end)
   ),
   "",
-  "Routing rules:",
-  (.routing_rules // {} | to_entries[] |
-    if (.value.deny // []) | length > 0
-    then "  " + .key + " ↛ " + ((.value.deny // []) | join(","))
-    else empty end
+  "Routing:",
+  (if (.cc_awareness.enabled // false)
+   then "  full-mesh (graph) + cross-domain cc → " + (.cc_awareness.hub // "hub")
+   else "  hub-and-spoke (deny-based)" end),
+  ( [ .routing_rules // {} | to_entries[] | select((.value.deny // []) | length > 0) ] as $blocked
+    | if ($blocked | length) > 0
+      then ($blocked[] | "  " + .key + " ↛ " + ((.value.deny // []) | join(",")))
+      else "  no deny-pairs (all agents can message all)" end
   )
 ' "$HOME/.agent-team-os/AGENT_MAP.json"
 

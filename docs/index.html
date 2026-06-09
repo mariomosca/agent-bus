@@ -249,23 +249,26 @@ sequenceDiagram
       </div>
 
       <div>
-        <h3 class="font-semibold text-white mb-2">3. Routing rules isolate contexts</h3>
-        <p class="text-muted text-sm mb-4">Declare blocked pairs in <code class="text-teal font-mono">AGENT_MAP.json</code>. Cross-impact between walled agents must route through a hub.</p>
+        <h3 class="font-semibold text-white mb-2">3. Full-mesh with hub awareness</h3>
+        <p class="text-muted text-sm mb-4">By default every agent can message every other (a graph, not a tree). Cross-domain messages auto-cc the hub via a non-blocking <code class="text-teal font-mono">cc-notify</code>, so the hub keeps visibility without being a bottleneck. Need hard isolation? Declare blocked pairs in <code class="text-teal font-mono">AGENT_MAP.json</code> &mdash; the deny mechanism is still there.</p>
         <div class="rounded-lg border border-white/10 bg-black/20 p-6 overflow-x-auto">
 <pre class="mermaid">
 flowchart TB
-    ops((ops<br/>hub))
+    hub((hub))
     dev((dev))
     growth((growth))
-    secure((secure<br/>isolated))
+    ops((ops))
 
-    ops &lt;--&gt; dev
-    ops &lt;--&gt; growth
-    ops &lt;--&gt; secure
+    hub &lt;--&gt; dev
+    hub &lt;--&gt; growth
+    hub &lt;--&gt; ops
     dev &lt;--&gt; growth
+    dev &lt;--&gt; ops
+    growth &lt;--&gt; ops
 
-    dev x--x secure
-    growth x--x secure
+    dev -.cc.-&gt; hub
+    growth -.cc.-&gt; hub
+    ops -.cc.-&gt; hub
 </pre>
         </div>
       </div>
@@ -290,8 +293,8 @@ flowchart TB
         <p class="text-muted text-sm">Pick up a conversation a week later. Threads are preserved.</p>
       </div>
       <div class="p-6 border border-white/10 rounded-lg">
-        <h3 class="font-semibold mb-2">Routing rules</h3>
-        <p class="text-muted text-sm">Declare blocked pairs to isolate contexts (e.g. work vs personal).</p>
+        <h3 class="font-semibold mb-2">Full-mesh + cc-awareness</h3>
+        <p class="text-muted text-sm">Everyone talks to everyone; cross-domain traffic auto-cc's the hub. Optional deny-pairs for hard isolation.</p>
       </div>
       <div class="p-6 border border-white/10 rounded-lg">
         <h3 class="font-semibold mb-2">Audit log</h3>
